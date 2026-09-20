@@ -42,6 +42,10 @@ p.sub{color:var(--muted);text-align:center;margin:0 0 calc(var(--u)*2);font-size
 .hint{text-align:center;color:var(--muted);font-size:calc(var(--u)*.85);margin-top:calc(var(--u)*1.2)}
 .mine{display:inline-block;background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:.25em .9em;margin-top:calc(var(--u)*.6)}
 .center{text-align:center}
+.context-menu{position:fixed;z-index:30;display:none;min-width:180px;background:var(--card);border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.5);border-radius:12px;padding:8px}
+.context-menu.show{display:block}
+.context-menu button{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;font-weight:700;cursor:pointer}
+.context-menu button:hover{border-color:var(--accent)}
 
 /* thank-you overlay */
 #thanks{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,7,5,.94);opacity:0;pointer-events:none;transition:opacity .2s;z-index:10}
@@ -101,8 +105,8 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
   <nav id="nav"><button class="link" id="toResults">🔒 View results</button></nav>
 
   <div class="card" id="pollPage">
-    <h1>Pick the chess number you vote for</h1>
-    <p class="sub">Tap a number from 1 to 10 to cast your vote</p>
+    <h1>Pick the number you vote for (10 options)</h1>
+    <p class="sub">Tap a number from 1 to 10</p>
     <div class="grid" id="grid"></div>
     <div class="center"><span class="mine" id="mine">Votes from this device: 0</span></div>
     <div class="hint">Tip: with a keyboard, press 1–9 and 0 (for 10)</div>
@@ -123,7 +127,7 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
     <div class="total" id="total">Loading…</div>
     <div id="bars" style="margin-top:14px"></div>
     <button class="btn sec" id="resBack">← Back to poll</button>
-    <button class="btn sec" id="addOptionOpen">＋ Add participant</button>
+    <button class="btn sec" id="addOptionOpen">＋ Add new number</button>
     <button class="btn outline-danger" id="clearOpen">🗑 Clear poll</button>
     <div class="clearbox hidden" id="clearBox">
       <p>This deletes ALL votes. Enter the password to confirm.</p>
@@ -133,13 +137,17 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
       <div class="msgline" id="clearMsg"></div>
     </div>
     <div class="clearbox hidden" id="addOptBox">
-      <p>Enter the password to add the next participant number.</p>
+      <p>Enter the password to add a new number.</p>
       <div class="pwbox"><input type="password" id="addOptPw" placeholder="Password" autocomplete="off"><button class="eye" data-for="addOptPw" aria-label="Show password">👁</button></div>
-      <button class="btn" id="addOptGo">Add next number</button>
+      <button class="btn" id="addOptGo">Add new number</button>
       <button class="btn sec" id="addOptCancel">Cancel</button>
       <div class="msgline" id="addOptMsg"></div>
     </div>
   </div>
+</div>
+
+<div id="contextMenu" class="context-menu hidden" aria-label="Number actions">
+  <button id="ctxRemoveBtn">Remove this number</button>
 </div>
 
 <div id="thanks"><div class="big" id="thanksNum"></div><div class="msg" id="thanksMsg"></div></div>
@@ -155,13 +163,18 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
   function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
   var localVotes=lsGet('poll_votes',{}), mine=lsGet('poll_mine',0), optionCount=lsGet('poll_option_count',DEFAULT_OPTION_COUNT);
   if(!optionCount||optionCount<1)optionCount=DEFAULT_OPTION_COUNT;
+  lsSet('poll_option_count', optionCount);
   function updMine(){$('mine').textContent='Votes from this device: '+mine}
+  function updateHeading(){
+    var heading=$('pollPage').querySelector('h1');
+    if(heading)heading.textContent='Pick the number you vote for ('+optionCount+' options)';
+  }
   function updatePrompt(){
     var label='Tap a number from 1 to '+optionCount;
     var sub=$('pollPage').querySelector('.sub');
     if(sub)sub.textContent=label;
   }
-  updMine();updatePrompt();
+  updMine();updateHeading();updatePrompt();
 
   function buzz(ms){try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}}
   function shake(el){el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake')}
@@ -170,12 +183,40 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
     for(var k in pages)pages[k].classList.toggle('hidden',k!==name);
     $('nav').classList.toggle('hidden',name!=='poll');
     if(name!=='results'&&unsub){unsub();unsub=null}
-    if(name!=='results'){closeClear();closeAddOption();}
+    if(name!=='results'){closeClear();closeAddOption();hideContextMenu();}
     window.scrollTo(0,0);
   }
 
   /* ---- buttons ---- */
   var grid=$('grid');
+  var ctxMenu=$('contextMenu');
+  var ctxNumber=null;
+  function hideContextMenu(){if(ctxMenu){ctxMenu.classList.remove('show');ctxMenu.style.left='';ctxMenu.style.top='';ctxNumber=null}}
+  function showRemoveMenu(x,y,n){
+    if(n<=DEFAULT_OPTION_COUNT)return;
+    ctxNumber=n;
+    ctxMenu.classList.add('show');
+    ctxMenu.style.left=x+'px';
+    ctxMenu.style.top=y+'px';
+    ctxMenu.querySelector('button').textContent='Remove number '+n;
+  }
+  function removeNumber(n){
+    if(n<=DEFAULT_OPTION_COUNT){hideContextMenu();return}
+    var pass=window.prompt('Enter password to remove number '+n,'');
+    if(pass!==PASSWORD){
+      if(pass!==null){alert('Wrong password');}
+      hideContextMenu();
+      return;
+    }
+    delete localVotes[n];
+    lsSet('poll_votes', localVotes);
+    optionCount=Math.max(DEFAULT_OPTION_COUNT, optionCount-1);
+    lsSet('poll_option_count', optionCount);
+    renderGrid();
+    if(!db){render(localVotes);} else {openResults();}
+    hideContextMenu();
+    show('poll');
+  }
   function renderGrid(){
     grid.innerHTML='';
     for(var i=1;i<=optionCount;i++)(function(n){
@@ -185,12 +226,20 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
         d.className='ripple';d.style.cssText='width:'+s+'px;height:'+s+'px;left:'+(e.clientX-r.left-s/2)+'px;top:'+(e.clientY-r.top-s/2)+'px';
         b.appendChild(d);setTimeout(function(){d.remove()},600);buzz(15);
       });
+      b.addEventListener('contextmenu',function(e){
+        e.preventDefault();
+        showRemoveMenu(e.clientX,e.clientY,n);
+      });
       b.addEventListener('click',function(){vote(n,b)});
       grid.appendChild(b);
     })(i);
+    updateHeading();
     updatePrompt();
   }
   renderGrid();
+  document.addEventListener('click',function(e){if(ctxMenu&&!ctxMenu.contains(e.target)&&!e.target.closest('button'))hideContextMenu();});
+  document.addEventListener('contextmenu',function(e){if(e.target.closest('#grid button')||e.target.closest('#ctxRemoveBtn')){return;}hideContextMenu();});
+  $('ctxRemoveBtn').addEventListener('click',function(){if(ctxNumber!=null)removeNumber(ctxNumber);});
 
   document.addEventListener('keydown',function(e){
     if(pages.poll.classList.contains('hidden')||e.target.tagName==='INPUT')return;
