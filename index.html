@@ -123,6 +123,7 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
     <div class="total" id="total">Loading…</div>
     <div id="bars" style="margin-top:14px"></div>
     <button class="btn sec" id="resBack">← Back to poll</button>
+    <button class="btn sec" id="addOptionOpen">＋ Add participant</button>
     <button class="btn outline-danger" id="clearOpen">🗑 Clear poll</button>
     <div class="clearbox hidden" id="clearBox">
       <p>This deletes ALL votes. Enter the password to confirm.</p>
@@ -130,6 +131,13 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
       <button class="btn danger" id="clearGo">Clear all votes</button>
       <button class="btn sec" id="clearCancel">Cancel</button>
       <div class="msgline" id="clearMsg"></div>
+    </div>
+    <div class="clearbox hidden" id="addOptBox">
+      <p>Enter the password to add the next participant number.</p>
+      <div class="pwbox"><input type="password" id="addOptPw" placeholder="Password" autocomplete="off"><button class="eye" data-for="addOptPw" aria-label="Show password">👁</button></div>
+      <button class="btn" id="addOptGo">Add next number</button>
+      <button class="btn sec" id="addOptCancel">Cancel</button>
+      <div class="msgline" id="addOptMsg"></div>
     </div>
   </div>
 </div>
@@ -139,14 +147,21 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
 <script>
 (function(){
   var PASSWORD='j';
+  var DEFAULT_OPTION_COUNT=10;
   var $=function(id){return document.getElementById(id)};
   var pages={poll:$('pollPage'),login:$('loginPage'),results:$('resultsPage')};
   var db=null,unsub=null,busy=false,shown={};
   function lsGet(k,d){try{var v=JSON.parse(localStorage.getItem(k)||'null');return v==null?d:v}catch(e){return d}}
   function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-  var localVotes=lsGet('poll_votes',{}), mine=lsGet('poll_mine',0);
+  var localVotes=lsGet('poll_votes',{}), mine=lsGet('poll_mine',0), optionCount=lsGet('poll_option_count',DEFAULT_OPTION_COUNT);
+  if(!optionCount||optionCount<1)optionCount=DEFAULT_OPTION_COUNT;
   function updMine(){$('mine').textContent='Votes from this device: '+mine}
-  updMine();
+  function updatePrompt(){
+    var label='Tap a number from 1 to '+optionCount;
+    var sub=$('pollPage').querySelector('.sub');
+    if(sub)sub.textContent=label;
+  }
+  updMine();updatePrompt();
 
   function buzz(ms){try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}}
   function shake(el){el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake')}
@@ -155,27 +170,32 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
     for(var k in pages)pages[k].classList.toggle('hidden',k!==name);
     $('nav').classList.toggle('hidden',name!=='poll');
     if(name!=='results'&&unsub){unsub();unsub=null}
-    if(name!=='results')closeClear();
+    if(name!=='results'){closeClear();closeAddOption();}
     window.scrollTo(0,0);
   }
 
   /* ---- buttons ---- */
   var grid=$('grid');
-  for(var i=1;i<=10;i++)(function(n){
-    var b=document.createElement('button');b.textContent=n;b.setAttribute('aria-label','Vote '+n);
-    b.addEventListener('pointerdown',function(e){
-      var r=b.getBoundingClientRect(),s=Math.max(r.width,r.height),d=document.createElement('span');
-      d.className='ripple';d.style.cssText='width:'+s+'px;height:'+s+'px;left:'+(e.clientX-r.left-s/2)+'px;top:'+(e.clientY-r.top-s/2)+'px';
-      b.appendChild(d);setTimeout(function(){d.remove()},600);buzz(15);
-    });
-    b.addEventListener('click',function(){vote(n,b)});
-    grid.appendChild(b);
-  })(i);
+  function renderGrid(){
+    grid.innerHTML='';
+    for(var i=1;i<=optionCount;i++)(function(n){
+      var b=document.createElement('button');b.textContent=n;b.setAttribute('aria-label','Vote '+n);
+      b.addEventListener('pointerdown',function(e){
+        var r=b.getBoundingClientRect(),s=Math.max(r.width,r.height),d=document.createElement('span');
+        d.className='ripple';d.style.cssText='width:'+s+'px;height:'+s+'px;left:'+(e.clientX-r.left-s/2)+'px;top:'+(e.clientY-r.top-s/2)+'px';
+        b.appendChild(d);setTimeout(function(){d.remove()},600);buzz(15);
+      });
+      b.addEventListener('click',function(){vote(n,b)});
+      grid.appendChild(b);
+    })(i);
+    updatePrompt();
+  }
+  renderGrid();
 
   document.addEventListener('keydown',function(e){
     if(pages.poll.classList.contains('hidden')||e.target.tagName==='INPUT')return;
     var n=e.key==='0'?10:parseInt(e.key,10);
-    if(n>=1&&n<=10)vote(n,grid.children[n-1]);
+    if(n>=1&&n<=optionCount)vote(n,grid.children[n-1]);
   });
 
   function confetti(){
@@ -209,16 +229,16 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
     (function step(t){var p=Math.min(1,(t-t0)/dur),v=Math.round(from+(to-from)*p);el.textContent=v;if(p<1)requestAnimationFrame(step)})(t0);
   }
   function ensureRows(){
-    if($('bars').children.length)return;
-    var h='';for(var j=1;j<=10;j++)h+='<div class="row" id="r'+j+'"><span class="n">'+j+'</span><div class="track"><div class="fill"></div></div><span class="c"><b>0</b> <span></span></span></div>';
+    if($('bars').children.length===optionCount)return;
+    var h='';for(var j=1;j<=optionCount;j++)h+='<div class="row" id="r'+j+'"><span class="n">'+j+'</span><div class="track"><div class="fill"></div></div><span class="c"><b>0</b> <span></span></span></div>';
     $('bars').innerHTML=h;shown={};
   }
   function render(counts){
     ensureRows();
-    var total=0,max=0;for(var i=1;i<=10;i++){var c=counts[i]||0;total+=c;if(c>max)max=c}
+    var total=0,max=0;for(var i=1;i<=optionCount;i++){var c=counts[i]||0;total+=c;if(c>max)max=c}
     var tEl=$('total'),prev=shown.total||0;
     tEl.innerHTML='<b id="tn">'+prev+'</b> '+(total===1?'vote':'votes')+' in total';countUp($('tn'),total,prev);shown.total=total;
-    for(var j=1;j<=10;j++){
+    for(var j=1;j<=optionCount;j++){
       var c2=counts[j]||0,row=$('r'+j);
       row.classList.toggle('lead',max>0&&c2===max);
       row.querySelector('.fill').style.width=(max?c2/max*100:0)+'%';
@@ -230,7 +250,7 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
     show('results');$('bars').innerHTML='';shown={};
     if(db){
       unsub=db.collection('votes').onSnapshot(function(snap){
-        var counts={};snap.docs.forEach(function(d){var v=d.data();if(v&&v.n>=1&&v.n<=10)counts[v.n]=(counts[v.n]||0)+1});render(counts);
+        var counts={};snap.docs.forEach(function(d){var v=d.data();if(v&&v.n>=1&&v.n<=optionCount)counts[v.n]=(counts[v.n]||0)+1});render(counts);
       },function(){$('total').textContent='Could not load results'});
     }else render(localVotes);
   }
@@ -249,6 +269,23 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(21
   }
   $('clearGo').addEventListener('click',doClear);
   $('clearPw').addEventListener('keydown',function(e){if(e.key==='Enter')doClear()});
+
+  function closeAddOption(){
+    $('addOptBox').classList.add('hidden');$('addOptionOpen').classList.remove('hidden');$('addOptPw').value='';$('addOptMsg').textContent='';
+  }
+  $('addOptionOpen').addEventListener('click',function(){$('addOptionOpen').classList.add('hidden');$('addOptBox').classList.remove('hidden');$('addOptPw').focus()});
+  $('addOptCancel').addEventListener('click',closeAddOption);
+  function addNextOption(){
+    if($('addOptPw').value!==PASSWORD){$('addOptMsg').textContent='Wrong password';shake($('addOptPw'));$('addOptPw').value='';buzz(80);return}
+    optionCount = Number(optionCount || DEFAULT_OPTION_COUNT) + 1;
+    lsSet('poll_option_count', optionCount);
+    renderGrid();
+    if(!db){render(localVotes);} else {openResults();}
+    closeAddOption();
+    show('poll');
+  }
+  $('addOptGo').addEventListener('click',addNextOption);
+  $('addOptPw').addEventListener('keydown',function(e){if(e.key==='Enter')addNextOption()});
 
   /* ---- login ---- */
   $('toResults').addEventListener('click',function(){$('pw').value='';$('pwErr').textContent='';show('login');$('pw').focus()});
